@@ -4,3 +4,5 @@ __pycache__/
 .local/
 *.log
 .DS_Store
+node_modules/
+*.tgz

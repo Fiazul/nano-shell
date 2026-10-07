@@ -1,3 +1,17 @@
+# npx distribution verification on 2026-10-07
+
+Reached: implemented, unit-tested, and actual local npm packaging/npx source-only install/uninstall tested. Public npm installation is not yet available; npm whoami reports ENEEDAUTH. The local Git repository has no remote configured and GitHub CLI authentication remains invalid.
+
+- Full suite: 82 tests, 76 passed, 6 legacy live-socket tests skipped because this sandbox denies socket creation.
+- Actual npm pack produces a 21-file dependency-free artifact including the Node entrypoint, source discovery module, Python runtime, shell hooks, installer and license. Credentials, caches, Git metadata and downloaded model/runtime files are excluded.
+- An actual offline npx invocation from a fresh unrelated directory and a home path with spaces installs the packed source, reads back the launcher's help, then uninstalls and verifies removal. Provisioning is explicitly skipped in these fixtures; no real model download is claimed.
+- Discovery fixtures find an existing renamed Git checkout, simulate a Git clone only when no local/bundled source exists, and verify failed-clone errors and temporary-directory cleanup.
+- Regression tests verify relative prefixes use the invoking directory, and tilde/relative config overrides support install/uninstall consistently.
+- The wrapper uses argument arrays without shell evaluation. The publisher script checks scope identity, clean Git state and registry version/SHA-512 readback. Publication/readback has not run successfully because authentication is unavailable.
+- Independent review approved the final path fixes and source/package behavior. Python/Bash/Node syntax and Git whitespace checks pass.
+
+Remaining external checks: public Git/npm publication, real Git clone, npm scope ownership, Node18, real model provisioning/inference through npx, full systemd lifecycle and ARM64. Existing headless verification below retains its original scope.
+
 # Headless revision verification on 2026-10-07
 
 Reached: implemented and unit-tested. This revision replaces the active Chrome flow with local Ollama and automatic startup. No real model download/inference or installed host upgrade has been verified from this sandbox.

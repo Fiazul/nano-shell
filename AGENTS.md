@@ -22,4 +22,7 @@ validated model JSON → argv policy → preview/confirm → subprocess pipeline
 - Distinguish in-memory/fixture verification from a real bridge or model roundtrip. Record skips and external blockers.
 - Keep comments minimal; explain non-obvious constraints rather than restating code.
 - Keep README focused on installation and use.
+- Keep the npm installer dependency-free, bundle all installation source, and resolve source paths from the package location. Never require the terminal's current directory to contain the repo.
+- Require explicit install invocation; do not add npm install lifecycle hooks that provision models automatically when the package is fetched.
+- Run `node --check bin/cli.cjs`, `node --check bin/source.cjs` and npm packaging/npx integration tests before changing the npm entrypoint. Mark public npm commands as pending until publication/readback succeeds.
 - Use the global monthly-worklog skill before every commit, include the worklog in that commit, and obtain explicit user authorization before committing or pushing.

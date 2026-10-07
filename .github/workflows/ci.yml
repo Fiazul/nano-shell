@@ -18,3 +18,6 @@ jobs:
       - run: python3 -m compileall -q nano_shell
       - run: bash -n install.sh uninstall.sh shell/bash.sh
       - run: node --check web/worker.js
+      - run: node --check bin/cli.cjs
+      - run: node --check bin/source.cjs
+      - run: npm pack --dry-run --ignore-scripts

@@ -15,23 +15,33 @@ Nano Shell shows the generated read-only command and asks before running it. It 
 
 ## Install
 
-From this checkout:
+From any directory on this machine, including `~`, install the current local checkout through npx:
 
 ```bash
-bash nano-shell/install.sh
+npx --yes "$HOME/Desktop/cli-assistant/nano-shell" install
 ```
 
-Or, when inside the repository directory, `bash install.sh`.
-
-The installer installs or reuses an Ollama executable, downloads the selected model, and verifies an inference response before reporting ready. It also installs Bash/Zsh hooks and an optional systemd user service. Open a new terminal and use `??`. To activate the shortcut in the terminal that was already open during installation, run `source ~/.bashrc` once (Zsh: `source ~/.zshrc`). A child installer cannot alter its parent shell's aliases.
-
-Once the public GitHub repository is published, the same installation can be run as:
+The public command, **pending npm publication**, will be:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fiazul/nano-shell/main/install.sh | bash
+npx --yes @fiazul/nano-shell install
 ```
 
-Requirements: Linux x86_64 or ARM64, Python 3.10+, Bash, enough disk/RAM for the model, and internet for initial downloads. The runtime installer uses curl and zstd, or the system libzstd when the zstd executable is absent. No sudo is used. Automatic downloads use [Ollama's official Linux distribution](https://docs.ollama.com/linux).
+The installer searches for an existing headless Nano Shell Git checkout in the current directory/parents and common home project folders, then uses the bundled package source if present. If neither is available it clones `https://github.com/fiazul/nano-shell.git` at `main`. Search is bounded to 5000 directories and six levels, skips caches and symlinks, and accepts renamed checkout folders with the correct package/runtime structure. Set `NANO_SHELL_SOURCE_DIR` to choose an explicit source, or `NANO_SHELL_SEARCH_ROOTS` to add colon-separated locations such as mounted disks. `NANO_SHELL_REPO` and `NANO_SHELL_REF` can select a different Git source.
+
+The npm package bundles its Python source, shell hooks and installer. It has no npm dependencies or automatic postinstall actions. Explicit `install` handles the runtime/model download, validates an inference response, and installs the terminal hooks. An optional systemd user service and on-demand startup handle subsequent terminal sessions.
+
+Open a new terminal and use `??`. To activate it in the terminal that was already open during installation, run `source ~/.bashrc` once (Zsh: `source ~/.zshrc`). A child installer cannot alter its parent shell's aliases. No browser window or routine setup command is required.
+
+Custom install through the npm package:
+
+```bash
+npx --yes @fiazul/nano-shell install --model qwen2.5-coder:3b --prefix "$HOME/tools"
+```
+
+Until publication, substitute the absolute local checkout path for `@fiazul/nano-shell` in npx commands. Developers can also run `bash install.sh` inside a checkout.
+
+Requirements: Linux x86_64 or ARM64, Node.js 18+ with npm/npx, Python 3.10+, Bash, enough disk/RAM for the model, and internet for initial downloads. The runtime installer uses curl and zstd, or the system libzstd when the zstd executable is absent. No sudo is used. Automatic downloads use [Ollama's official Linux distribution](https://docs.ollama.com/linux).
 
 The default model is [qwen2.5-coder:1.5b](https://ollama.com/library/qwen2.5-coder:1.5b); its listed model download is approximately 986 MB, plus the Ollama runtime. CPU inference is supported, and latency depends on your hardware. To choose another local model during installation:
 
@@ -82,7 +92,7 @@ The model receives your question, current directory and bounded directory names.
 ## Remove
 
 ```bash
-~/.local/bin/nano-shell uninstall
+npx --yes @fiazul/nano-shell uninstall
 ```
 
 Uninstall stops only verified owned processes, removes its service/files/hooks and preserves models/configuration by default. Add `--purge` to remove Nano Shell's model storage and configuration too. Removing an old installation preserves the current installation's hooks and service. Open a new terminal afterward to unload its aliases and bindings.
@@ -91,12 +101,14 @@ Uninstall stops only verified owned processes, removes its service/files/hooks a
 
 ```bash
 python3 -m unittest discover -s tests -v
+node --check bin/cli.cjs
+node --check bin/source.cjs
 python3 -m compileall -q nano_shell
 bash -n install.sh uninstall.sh shell/bash.sh scripts/publish.sh
 ```
 
 See [verification details](docs/verification.md). Fixtures are explicitly mocks; they do not prove a downloaded model ran. Legacy bridge/browser files remain for earlier protocol regression tests, and are not part of the active headless runtime.
 
-To publish as the repository owner, authenticate GitHub CLI with `gh auth login -h github.com`, then run `bash scripts/publish.sh`. It checks account `fiazul`, pushes `main`, and verifies the remote commit and public visibility. The hosted install URL is pending until publication succeeds.
+To publish as the repository owner, authenticate GitHub CLI with `gh auth login -h github.com`, then run `bash scripts/publish.sh`. It checks account `fiazul`, pushes `main`, and verifies the remote commit and public visibility. The hosted install URL is pending until publication succeeds. npm publishing is separate: after `npm login` as the scope owner, run `bash scripts/publish-npm.sh`; it publishes the packed artifact and checks the registry version and SHA-512 integrity. Public npm installation remains pending until that readback succeeds.
 
 MIT licensed.

@@ -1,0 +1,43 @@
+{
+  "name": "@fiazul/nano-shell",
+  "version": "0.2.0",
+  "description": "Headless local AI assistant for your Linux terminal. Install once with npx, then ask with ??.",
+  "license": "MIT",
+  "author": {
+    "name": "Fiazul Haque",
+    "email": "fiazulhaque90@gmail.com"
+  },
+  "bin": {
+    "nano-shell": "bin/cli.cjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "os": ["linux"],
+  "files": [
+    "bin/cli.cjs",
+    "bin/source.cjs",
+    "install.sh",
+    "uninstall.sh",
+    "nano_shell/*.py",
+    "shell/*.sh",
+    "web/*.html",
+    "web/*.js",
+    "web/*.css",
+    "LICENSE",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fiazul/nano-shell.git"
+  },
+  "scripts": {
+    "test": "python3 -m unittest discover -s tests -v",
+    "check": "node --check bin/cli.cjs"
+  },
+  "keywords": ["terminal", "shell", "local-ai", "ollama", "headless", "linux"]
+}
