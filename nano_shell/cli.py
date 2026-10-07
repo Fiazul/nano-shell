@@ -154,17 +154,15 @@ def main(argv=None):
             if args.action == 'suggest':
                 print(policy.render_command(pipeline))
                 return 0
-            print('$ ' + response['command'], file=sys.stderr)
-            if response.get('explanation'):
-                print(response['explanation'], file=sys.stderr)
             if not args.yes:
                 if not sys.stdin.isatty():
                     raise CliError('execution requires an interactive confirmation or explicit --yes')
-                print('Run this read-only command? [y/N] ', end='', file=sys.stderr, flush=True)
+                print(f'Run "{response["command"]}"? [y/N] ', end='', file=sys.stderr, flush=True)
                 answer = sys.stdin.readline().strip().lower()
                 if answer not in {'y', 'yes'}:
                     print('Cancelled; command was not executed.', file=sys.stderr)
                     return 1
+            print(f'Running this command "{response["command"]}"', file=sys.stderr)
             return policy.execute(pipeline)
         if args.action == 'start':
             return start(args.foreground)
