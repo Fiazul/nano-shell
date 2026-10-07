@@ -10,6 +10,58 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class InstallTests(unittest.TestCase):
+    def test_foreign_service_is_preserved_before_any_install_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            unit = home / 'config/systemd/user/nano-shell.service'
+            unit.parent.mkdir(parents=True)
+            original = '[Service]\nExecStart=/usr/bin/some-other-program\n'
+            unit.write_text(original)
+            env = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(home / 'config'),
+                       XDG_STATE_HOME=str(home / 'state'))
+            result = subprocess.run(['bash', str(ROOT / 'install.sh')], env=env,
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('another installation', result.stderr)
+            self.assertEqual(unit.read_text(), original)
+            self.assertFalse((home / '.local/bin/nano-shell').exists())
+            self.assertFalse((home / '.bashrc').exists())
+
+    def test_default_install_provisions_without_user_setup_instruction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            fakebin = home / 'fakebin'
+            fakebin.mkdir()
+            calls = home / 'calls'
+            python = fakebin / 'python3'
+            python.write_text('#!/usr/bin/env bash\n'
+                              'if [[ ${1:-} == -I && ${2:-} == -c && ${3:-} == *"nano_shell.bootstrap"* ]]; then\n'
+                              '  echo "bootstrap:$PWD" >> "$TEST_CALLS"; echo /fake/ollama; exit 0\nfi\n'
+                              'if [[ ${1:-} == -I && ${2:-} == -c && ${3:-} == *"from nano_shell.cli import main"* && ${4:-} != --help ]]; then\n'
+                              '  echo "$4" >> "$TEST_CALLS"\n'
+                              '  if [[ ${4:-} == setup && ${TEST_PROVISION_FAIL:-0} == 1 ]]; then exit 9; fi\n'
+                              '  exit 0\nfi\n'
+                              'exec ' + __import__('shlex').quote(__import__('sys').executable) + ' "$@"\n')
+            python.chmod(0o755)
+            env = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(home / 'config'),
+                       XDG_STATE_HOME=str(home / 'state'), TEST_CALLS=str(calls),
+                       PATH=str(fakebin) + os.pathsep + os.environ['PATH'])
+            result = subprocess.run(['bash', str(ROOT / 'install.sh'), '--no-service'],
+                                    env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('bootstrap', calls.read_text())
+            self.assertIn('bootstrap:' + str(home / '.local/share/nano-shell'), calls.read_text())
+            self.assertIn('setup', calls.read_text())
+            self.assertIn('status', calls.read_text())
+            self.assertNotIn('Chrome', result.stdout)
+            self.assertNotIn('nano-shell setup', result.stdout)
+            self.assertIn('??', result.stdout)
+            env['TEST_PROVISION_FAIL'] = '1'
+            failed = subprocess.run(['bash', str(ROOT / 'install.sh'), '--no-service'],
+                                    env=env, capture_output=True, text=True)
+            self.assertEqual(failed.returncode, 9)
+            self.assertNotIn('Headless runtime and local model verified', failed.stdout)
+
     def test_uninstall_old_prefix_preserves_current_hooks_and_service(self):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
@@ -76,6 +128,13 @@ class InstallTests(unittest.TestCase):
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("ask", result.stdout)
+            shadow = home / 'nano_shell'
+            shadow.mkdir()
+            (shadow / '__init__.py').write_text('raise RuntimeError("must not import from terminal cwd")\n')
+            (home / 'argparse.py').write_text('raise RuntimeError("must not import stdlib from terminal cwd")\n')
+            result = subprocess.run([str(launcher), '--help'], env=env, cwd=home,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
             check = subprocess.run(["bash", "-c", 'shopt -s expand_aliases; source "$HOME/.bashrc"; type "??"'],
                                    env=env, capture_output=True, text=True)
             self.assertEqual(check.returncode, 0, check.stderr)

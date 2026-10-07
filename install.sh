@@ -5,13 +5,15 @@ prefix="${NANO_SHELL_PREFIX:-$HOME/.local}"
 shell_hooks=1
 service=1
 start=1
+model=""
 while (($#)); do
   case "$1" in
     --prefix) prefix="${2:?--prefix needs a path}"; shift 2 ;;
     --no-shell) shell_hooks=0; shift ;;
     --no-service) service=0; shift ;;
     --no-start) start=0; shift ;;
-    --help) printf '%s\n' 'Usage: bash install.sh [--prefix PATH] [--no-shell] [--no-service] [--no-start]'; exit 0 ;;
+    --model) model="${2:?--model needs a local model name}"; shift 2 ;;
+    --help) printf '%s\n' 'Usage: bash install.sh [--prefix PATH] [--model NAME] [--no-shell] [--no-service] [--no-start]'; exit 0 ;;
     *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
   esac
 done
@@ -20,6 +22,21 @@ python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' || {
   printf '%s\n' 'Python 3.10+ is required.' >&2; exit 1;
 }
 prefix="$(python3 -c 'import os,sys; print(os.path.abspath(os.path.expanduser(sys.argv[1])))' "$prefix")"
+unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+if ((start && service)) && [[ -e "$unit_dir/nano-shell.service" || -L "$unit_dir/nano-shell.service" ]]; then
+  if ! python3 - "$unit_dir/nano-shell.service" "$prefix/bin/nano-shell" <<'PY'
+from pathlib import Path
+import sys
+unit = Path(sys.argv[1])
+escaped = sys.argv[2].replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
+expected = 'ExecStart="' + escaped + '" start --foreground'
+raise SystemExit(0 if not unit.is_symlink() and expected in unit.read_text().splitlines() else 1)
+PY
+  then
+    printf '%s\n' 'nano-shell.service belongs to another installation; it was left unchanged. Use --no-service for on-demand startup.' >&2
+    exit 1
+  fi
+fi
 source_dir=""
 if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
   source_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -67,8 +84,8 @@ launcher.write_text("#!/usr/bin/env bash\nset -e\n"
     + "if [[ ${1:-} == uninstall ]]; then\n  shift\n  exec bash "
     + shlex.quote(str(target / "uninstall.sh")) + " --prefix "
     + shlex.quote(str(prefix)) + ' "$@"\nfi\n'
-    + "export PYTHONPATH=" + shlex.quote(str(target))
-    + '${PYTHONPATH:+:$PYTHONPATH}\nexec python3 -m nano_shell "$@"\n')
+    + "exec python3 -I -c " + shlex.quote("import sys; sys.path.insert(0, " + repr(str(target))
+    + "); from nano_shell.cli import main; raise SystemExit(main())") + ' "$@"\n')
 launcher.chmod(0o755)
 if sys.argv[4] == "1":
     for filename, script in ((".bashrc", "bash.sh"), (".zshrc", "zsh.sh")):
@@ -107,8 +124,23 @@ with tempfile.NamedTemporaryFile(mode="w", dir=configuration, delete=False) as t
     temporary_path = Path(temporary.name)
 os.replace(temporary_path, marker)
 PY
-printf 'Installed Nano Shell: %s\n' "$prefix/bin/nano-shell"
-if ((service)) && command -v systemctl >/dev/null && systemctl --user show-environment >/dev/null 2>&1; then
+printf 'Installed Nano Shell files: %s\n' "$prefix/bin/nano-shell"
+unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+if ((start)); then
+  if [[ -f "$unit_dir/nano-shell.service" ]] && command -v systemctl >/dev/null && systemctl --user show-environment >/dev/null 2>&1; then
+    if python3 - "$unit_dir/nano-shell.service" "$prefix/bin/nano-shell" <<'PY'
+from pathlib import Path
+import sys
+escaped = sys.argv[2].replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
+raise SystemExit(0 if 'ExecStart="' + escaped + '" start --foreground' in Path(sys.argv[1]).read_text().splitlines() else 1)
+PY
+    then systemctl --user disable --now nano-shell.service; fi
+  fi
+  "$prefix/bin/nano-shell" stop
+  (cd -- "$target"; python3 -I -c 'import sys,runpy; sys.path.insert(0,sys.argv[1]); runpy.run_module("nano_shell.bootstrap",run_name="__main__")' "$target" >/dev/null)
+  if [[ -n "$model" ]]; then "$prefix/bin/nano-shell" config --model "$model" >/dev/null; fi
+fi
+if ((start && service)) && command -v systemctl >/dev/null && systemctl --user show-environment >/dev/null 2>&1; then
   python3 - "$prefix" <<'PY'
 from pathlib import Path
 import os
@@ -118,23 +150,28 @@ directory = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
 directory.mkdir(parents=True, exist_ok=True)
 def escape(value):
     return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
-unit = ("[Unit]\nDescription=Nano Shell local inference bridge\nAfter=network.target\n\n"
+unit = ("[Unit]\nDescription=Nano Shell headless local model runtime\nAfter=network.target\n\n"
         "[Service]\nType=simple\nExecStart=\"" + escape(prefix / "bin/nano-shell")
-        + "\" start --foreground\nRestart=on-failure\nRestartSec=3\n\n"
+        + "\" start --foreground\nRestart=on-failure\nRestartSec=3\n")
+for variable in ('NANO_SHELL_OLLAMA_PORT', 'NANO_SHELL_OLLAMA_BIN', 'NANO_SHELL_STATE_DIR',
+                 'NANO_SHELL_CONFIG_DIR', 'XDG_CONFIG_HOME', 'XDG_STATE_HOME'):
+    if variable in os.environ:
+        unit += 'Environment="' + variable + '=' + escape(os.environ[variable]) + '"\n'
+unit += ("\n"
         "[Install]\nWantedBy=default.target\n")
 (directory / "nano-shell.service").write_text(unit)
 PY
   systemctl --user daemon-reload
-  if ((start)); then
-    "$prefix/bin/nano-shell" stop >/dev/null 2>&1 || true
-    systemctl --user enable --now nano-shell.service
-  else
-    systemctl --user enable nano-shell.service
-  fi
+  systemctl --user enable --now nano-shell.service
   printf '%s\n' 'Enabled nano-shell.service for this user.'
-elif ((start)); then
-  "$prefix/bin/nano-shell" start
 fi
-printf '%s\n' 'Next: open a new terminal (or source ~/.bashrc / ~/.zshrc).'
-printf 'Initialize Gemini Nano once: %q setup\n' "$prefix/bin/nano-shell"
-printf '%s\n' 'Then: ?? what was the last downloaded file?'
+if ((start)); then
+  "$prefix/bin/nano-shell" setup
+  "$prefix/bin/nano-shell" status >/dev/null
+  printf '%s\n' 'Headless runtime and local model verified. Open a new terminal and use:'
+  printf '%s\n' '?? is docker up'
+  printf '%s\n' 'No browser or per-terminal setup is needed.'
+else
+  printf '%s\n' 'Source-only install: runtime/model provisioning skipped (--no-start).'
+fi
+printf '%s\n' 'For this existing terminal only: source ~/.bashrc (or ~/.zshrc).'

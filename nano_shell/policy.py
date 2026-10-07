@@ -82,6 +82,13 @@ def _validate_argv(argv):
         if not args or args[0] != 'status' or any(arg not in {'--short', '-s', '--branch', '-b', '--porcelain', '--untracked-files=no', '--untracked-files=normal', '--untracked-files=all'} for arg in args[1:]):
             raise PolicyError('only git status with vetted flags is supported')
         return
+    if program == 'docker':
+        if not args or args[0] not in {'info', 'version', 'ps'}:
+            raise PolicyError('only read-only Docker info, version and ps are supported')
+        flags = {'-a', '--all', '-q', '--quiet', '--no-trunc', '--size', '-s'} if args[0] == 'ps' else set()
+        if any(arg not in flags for arg in args[1:]):
+            raise PolicyError('unsupported Docker inspection option')
+        return
     if program not in FLAGS:
         raise PolicyError('unsupported command: ' + program)
     index, positional = 0, False

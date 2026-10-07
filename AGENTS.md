@@ -1,8 +1,7 @@
 # Nano Shell contributor instructions
 
 ```text
-Bash/Zsh ?? / Ctrl+G → Python CLI → authenticated localhost bridge → Chrome LanguageModel
-                              └→ explicitly configured localhost Ollama
+Bash/Zsh ?? / Ctrl+G → Python CLI → automatic headless runtime → local Ollama on 127.0.0.1:11435
 validated model JSON → argv policy → preview/confirm → subprocess pipeline → actual exit status
 ```
 
@@ -10,10 +9,12 @@ validated model JSON → argv policy → preview/confirm → subprocess pipeline
 - Validate generated commands in both generation and execution paths. Never invoke a shell or use eval.
 - Allow only explicitly reviewed programs, subcommands and options; preserve the unknown/failed/cancelled outcome.
 - Require confirmation by default. Keep `--yes` limited to the same reviewed subset.
-- Preserve private XDG state, token permissions, strict Host/Origin checks, bounded requests and timeouts.
+- Preserve private XDG state, locks, process ownership and bounded requests/timeouts. Preserve token/Host/Origin checks in legacy protocol code.
 - Disable environment proxy use and HTTP redirects for local inference requests.
 - Share history only with explicit `--history`. Never log questions, context, model output, or credentials.
-- Report Chrome model availability, download and errors honestly. Keep a user activation button; do not claim headless Nano support.
+- Keep the normal product flow fully headless. Provision runtime/model during install; start automatically on demand. Never open a browser or require routine setup.
+- Disable Ollama cloud features, preserve process identity and locks, and stop only verified owned processes. Never kill an arbitrary stored PID.
+- Keep legacy bridge/browser files isolated from the active runtime; retain their regression tests while those files exist.
 - Keep the Python runtime dependency-free on Python 3.10+.
 - Preserve unrelated shell configuration and test streamed installs, paths with spaces and repeated install/uninstall.
 - Add tests for destructive option bypasses, auth regressions and incorrect success reporting.

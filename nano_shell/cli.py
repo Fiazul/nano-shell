@@ -3,14 +3,10 @@ import argparse
 import json
 import os
 from pathlib import Path
-import shutil
-import signal
-import subprocess
 import sys
-import threading
 import time
 
-from . import backends, bridge, policy, storage
+from . import backends, policy, storage, runtime
 
 
 class CliError(RuntimeError):
@@ -62,70 +58,18 @@ def context_for(question, history=False):
 def generate(question, history=False):
     context = context_for(question, history)
     config = storage.load_config()
-    if config['backend'] == 'ollama':
-        raw = backends.ollama_generate(backends.prompt_for(context), config['model'])
-        return policy.parse_generation(raw)
-    try:
-        return request('/generate', context)
-    except backends.BackendError as exc:
-        raise CliError(str(exc) + '; run nano-shell setup and initialize Chrome') from exc
-
-
-def _secure_log():
-    path = storage.state_dir() / 'daemon.log'
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
-    import stat
-    info = os.fstat(descriptor)
-    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
-        os.close(descriptor)
-        raise CliError('daemon log is not a private regular file')
-    os.fchmod(descriptor, 0o600)
-    return os.fdopen(descriptor, 'a')
+    runtime.ensure_running()
+    runtime.require_model(config['model'])
+    raw = backends.ollama_generate(backends.prompt_for(context), config['model'])
+    return policy.parse_generation(raw)
 
 
 def start(foreground=False):
-    if foreground:
-        server = bridge.make_server(port=port(), token=storage.get_token(), config_provider=storage.load_config)
-        def stop_signal(_signum, _frame):
-            threading.Thread(target=server.shutdown, daemon=True).start()
-        old = {sig: signal.signal(sig, stop_signal) for sig in (signal.SIGTERM, signal.SIGINT)}
-        try:
-            server.serve_forever()
-        finally:
-            server.server_close()
-            for sig, handler in old.items():
-                signal.signal(sig, handler)
+    result = runtime.ensure_running(foreground=foreground)
+    if result.get('running') is True:
+        print('Headless runtime is running.', file=sys.stderr)
         return 0
-    try:
-        request('/status', timeout=0.5)
-        print('Nano Shell daemon is already running.', file=sys.stderr)
-        return 0
-    except backends.BackendError:
-        pass
-    source = str(Path(__file__).resolve().parent.parent)
-    env = os.environ.copy()
-    env['PYTHONPATH'] = source + (os.pathsep + env['PYTHONPATH'] if env.get('PYTHONPATH') else '')
-    with _secure_log() as log:
-        process = subprocess.Popen([sys.executable, '-m', 'nano_shell', 'start', '--foreground'],
-                                   stdin=subprocess.DEVNULL, stdout=log, stderr=log,
-                                   start_new_session=True, env=env, cwd=source)
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            raise CliError(f'daemon failed to start (exit {process.returncode}); see {storage.state_dir() / "daemon.log"}')
-        try:
-            request('/status', timeout=0.2)
-            print('Nano Shell daemon started.', file=sys.stderr)
-            return 0
-        except backends.BackendError:
-            time.sleep(0.05)
-    process.terminate()
-    try:
-        process.wait(timeout=2)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait()
-    raise CliError('daemon did not become available; inspect daemon.log')
+    return 0 if result.get('stopped') is True else 1
 
 
 def connection_refused(error):
@@ -136,7 +80,7 @@ def connection_refused(error):
             and cause.reason.errno == errno.ECONNREFUSED)
 
 
-def stop():
+def _stop_legacy_bridge():
     # An uninitialized installation is already stopped, including offline uninstall.
     if not storage.token_path().exists():
         return 0
@@ -160,35 +104,23 @@ def stop():
     raise CliError('shutdown requested but daemon is still reachable')
 
 
+def stop():
+    _stop_legacy_bridge()
+    result = runtime.stop()
+    if result.get('stopped') is not True:
+        raise CliError('runtime stop outcome is unverified')
+    print('Owned headless runtime stopped.' if result.get('changed') else 'No verified owned headless runtime to stop.', file=sys.stderr)
+    return 0
+
+
 def backend_status():
-    config = storage.load_config()
-    if config['backend'] == 'nano':
-        return request('/status', timeout=2)
-    response = backends.local_request('http://127.0.0.1:11434/api/tags', timeout=2)
-    models = response.get('models')
-    if not isinstance(models, list):
-        raise CliError('invalid Ollama model inventory')
-    names = {model.get('name') for model in models if isinstance(model, dict)}
-    model = config['model']
-    ready = model in names or (':' not in model and model + ':latest' in names)
-    return {'backend': 'ollama', 'model': model, 'ready': ready,
-            'detail': 'Configured model is installed; inference has not been verified' if ready else 'Configured model is not installed'}
+    return runtime.status(storage.load_config()['model'])
 
 
 def setup():
-    if storage.load_config()['backend'] != 'nano':
-        status = backend_status()
-        print(json.dumps(status), file=sys.stderr)
-        return 0 if status['ready'] else 1
-    executable = next((shutil.which(name) for name in ('google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser') if shutil.which(name)), None)
-    if not executable:
-        raise CliError('Chrome/Chromium is not installed; Gemini Nano requires a compatible Chrome browser')
-    start()
-    url = f'http://127.0.0.1:{port()}/#token={storage.get_token()}'
-    subprocess.Popen([executable, '--app=' + url], stdin=subprocess.DEVNULL,
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-    print('Chrome initialization window requested. Click Initialize Gemini Nano; keep the window open.', file=sys.stderr)
-    return 0
+    result = runtime.provision(storage.load_config()['model'])
+    print(json.dumps(result), file=sys.stderr)
+    return 0 if result.get('ready') is True else 1
 
 
 def parser():
@@ -205,7 +137,7 @@ def parser():
     for name in ('stop', 'status', 'doctor', 'setup'):
         commands.add_parser(name)
     config = commands.add_parser('config')
-    config.add_argument('--backend', choices=('nano', 'ollama'))
+    config.add_argument('--backend', choices=('ollama',))
     config.add_argument('--model')
     return result
 
@@ -253,7 +185,7 @@ def main(argv=None):
         if args.action in {'status', 'doctor'}:
             if args.action == 'doctor':
                 print(f'Python {sys.version.split()[0]}; state {storage.state_dir()}; config {storage.config_dir()}', file=sys.stderr)
-                print(f'Inference endpoint http://127.0.0.1:{port()}; Chrome worker requires user initialization.', file=sys.stderr)
+                print(f'Headless inference endpoint {runtime.endpoint()}.', file=sys.stderr)
             status = backend_status()
             print(json.dumps(status))
             return 0 if status.get('ready') is True else 1
@@ -261,6 +193,6 @@ def main(argv=None):
     except KeyboardInterrupt:
         print('Cancelled.', file=sys.stderr)
         return 130
-    except (CliError, policy.PolicyError, storage.StorageError, backends.BackendError, OSError) as exc:
+    except (CliError, policy.PolicyError, storage.StorageError, backends.BackendError, runtime.RuntimeError, OSError) as exc:
         print('nano-shell: ' + str(exc), file=sys.stderr)
         return 1

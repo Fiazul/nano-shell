@@ -4,6 +4,9 @@ import os
 from pathlib import Path
 import secrets
 import stat
+import re
+
+DEFAULT_MODEL = 'qwen2.5-coder:1.5b'
 
 
 class StorageError(ValueError):
@@ -65,22 +68,24 @@ def get_token():
 
 
 def validate_config(config):
-    if not isinstance(config, dict) or set(config) - {'backend', 'model'} or config.get('backend') not in {'nano', 'ollama'}:
+    if not isinstance(config, dict) or set(config) - {'backend', 'model'} or config.get('backend') != 'ollama':
         raise StorageError('invalid configuration')
     model = config.get('model', '')
-    if not isinstance(model, str) or len(model) > 200 or any(ord(char) < 32 for char in model):
+    if not isinstance(model, str) or len(model) > 200 or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:-]*(?:/[A-Za-z0-9][A-Za-z0-9_.:-]*)*', model):
         raise StorageError('invalid model name')
-    if config['backend'] == 'ollama' and not model.strip():
-        raise StorageError('Ollama requires an explicitly configured model')
     return {'backend': config['backend'], 'model': model}
 
 
 def load_config():
     path = config_dir() / 'config.json'
     if not path.exists() and not path.is_symlink():
-        return {'backend': 'nano', 'model': ''}
+        return {'backend': 'ollama', 'model': DEFAULT_MODEL}
     try:
-        return validate_config(json.loads(_read_private(path)))
+        config = json.loads(_read_private(path))
+        if isinstance(config, dict) and config.get('backend') == 'nano' and not set(config) - {'backend', 'model'}:
+            config = {'backend': 'ollama', 'model': DEFAULT_MODEL}
+            save_config(config)
+        return validate_config(config)
     except (ValueError, RecursionError) as exc:
         raise StorageError('invalid configuration: ' + str(exc)) from exc
 
@@ -88,13 +93,19 @@ def load_config():
 def save_config(config):
     config = validate_config(config)
     path = config_dir() / 'config.json'
+    write_private_json(path, config)
+
+
+def write_private_json(path, value):
     if path.is_symlink():
-        raise StorageError('configuration must not be a symbolic link')
-    temp = path.with_name('config-' + secrets.token_hex(8) + '.tmp')
+        raise StorageError('private file must not be a symbolic link')
+    if path.exists():
+        _read_private(path)
+    temp = path.with_name(path.name + '-' + secrets.token_hex(8) + '.tmp')
     descriptor = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     try:
         with os.fdopen(descriptor, 'w') as handle:
-            json.dump(config, handle)
+            json.dump(value, handle)
             handle.write('\n')
         os.replace(temp, path)
     finally:

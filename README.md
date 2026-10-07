@@ -1,106 +1,83 @@
 # Nano Shell
 
-Ask your Linux terminal a question. Get a command, inspect it, then run it.
-
-```text
-$ ?? what was the last downloaded file?
-→ find ~/Downloads -type f -printf '%T@ %p\n' | sort -nr | head -1
-Run it? [y/N]
-```
-
-Works inside your existing Bash or Zsh terminal. Uses Gemini Nano through Chrome, or an explicitly selected local Ollama model. No cloud API key, root access, or Python dependencies.
-
-## Install
-
-Requires Linux, Python 3.10+, Bash, and curl/tar for the download. Chrome with the Prompt API and a downloaded model is required for the default Nano backend.
-
-Once this repository is published:
+A headless local AI assistant in your existing Linux terminal. Install once, open a terminal, and ask:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fiazul/nano-shell/main/install.sh | bash
-```
-
-From a downloaded or cloned checkout:
-
-```bash
-bash install.sh
-```
-
-Open a new terminal, or run `source ~/.bashrc` (Zsh: `source ~/.zshrc`). Initialize Nano:
-
-```bash
-~/.local/bin/nano-shell setup
-```
-
-Click the initialization button in the Chrome window. It checks availability, downloads the model if Chrome permits it, and connects to the local bridge. Keep that window running while using Nano. An existing compatible Chrome profile may be necessary to access its downloaded model.
-
-Chrome's Prompt API runs in a browser document. This project does not claim that a Python daemon can run Gemini Nano on its own. Hardware requirements, download eligibility, and API availability come from [Chrome's Prompt API documentation](https://developer.chrome.com/docs/ai/prompt-api). If the API is unavailable, the setup page reports it instead of inventing a response.
-
-The installer adds a launcher under `~/.local/bin`, Bash/Zsh hooks, and a systemd user service when a user systemd session is available. Otherwise it starts a detached bridge. It does not use sudo. Configuration survives upgrades and uninstall by default.
-
-Custom install:
-
-```bash
-bash install.sh --prefix "$HOME/tools" --no-service
-```
-
-Use `--no-start` to install without starting the bridge and `--no-shell` to skip shell configuration. Add the custom `bin` directory to PATH for direct `nano-shell` use; installed shell hooks use its absolute path.
-
-## Use
-
-```bash
+?? is docker up
 ?? what was the last downloaded file?
 ?? what process is listening on port 8000?
 ?? find the largest file here
 ?? show python processes
 ?? what files changed in this git repo?
-?? find all json files modified today
 ```
 
-Quote questions containing shell punctuation, for example `?? 'what changed today?'`.
+Nano Shell shows the generated read-only command and asks before running it. It starts its local model server automatically when needed. There is no browser window, account, cloud API key, or per-terminal setup command.
 
-The model may produce a command outside the supported read-only subset; Nano Shell refuses it and explains why. A model suggestion is not proof that a command answers the question correctly.
+## Install
 
-Type a question at the prompt and press **Ctrl+G** to replace the current input with a suggested command. Review it and press Enter yourself. This is an explicit suggestion shortcut; it does not send every keystroke to a model. Ctrl+G replaces that key's existing Bash/Zsh binding while the hook is loaded.
+From this checkout:
 
 ```bash
-~/.local/bin/nano-shell suggest 'show python processes'
-~/.local/bin/nano-shell ask --yes 'what files changed in this git repo?'
-~/.local/bin/nano-shell status
-~/.local/bin/nano-shell doctor
-~/.local/bin/nano-shell start
-~/.local/bin/nano-shell stop
+bash nano-shell/install.sh
 ```
 
-`--yes` skips confirmation only for the validated read-only subset. Normal questions always ask first. Generated commands never execute inside the HTTP bridge or browser. Actual command errors retain a nonzero exit status.
+Or, when inside the repository directory, `bash install.sh`.
 
-## Without a browser
+The installer installs or reuses an Ollama executable, downloads the selected model, and verifies an inference response before reporting ready. It also installs Bash/Zsh hooks and an optional systemd user service. Open a new terminal and use `??`. To activate the shortcut in the terminal that was already open during installation, run `source ~/.bashrc` once (Zsh: `source ~/.zshrc`). A child installer cannot alter its parent shell's aliases.
 
-Install and run [Ollama](https://github.com/ollama/ollama), and download a model suitable for your machine. Then select its exact installed model name:
+Once the public GitHub repository is published, the same installation can be run as:
 
 ```bash
-~/.local/bin/nano-shell config --backend ollama --model YOUR_INSTALLED_MODEL
-~/.local/bin/nano-shell stop
-~/.local/bin/nano-shell start
+curl -fsSL https://raw.githubusercontent.com/fiazul/nano-shell/main/install.sh | bash
 ```
 
-Ollama's local service must be running. There is no silent backend fallback. Switching back:
+Requirements: Linux x86_64 or ARM64, Python 3.10+, Bash, enough disk/RAM for the model, and internet for initial downloads. The runtime installer uses curl and zstd, or the system libzstd when the zstd executable is absent. No sudo is used. Automatic downloads use [Ollama's official Linux distribution](https://docs.ollama.com/linux).
+
+The default model is [qwen2.5-coder:1.5b](https://ollama.com/library/qwen2.5-coder:1.5b); its listed model download is approximately 986 MB, plus the Ollama runtime. CPU inference is supported, and latency depends on your hardware. To choose another local model during installation:
 
 ```bash
-~/.local/bin/nano-shell config --backend nano
-~/.local/bin/nano-shell stop
-~/.local/bin/nano-shell setup
+bash install.sh --model qwen2.5-coder:3b
 ```
+
+Existing local model choices are preserved. Earlier Chrome/Nano configuration migrates to the headless default. This version uses Ollama local inference, rather than Chrome's Gemini Nano.
+
+## Everyday use
+
+Use a space after `??`, and quote questions containing shell punctuation:
+
+```bash
+?? 'what files changed today?'
+```
+
+Type a question at the prompt and press **Ctrl+G** to insert a shell-safe command suggestion. Review it and press Enter yourself. The shortcut replaces that key's existing binding while its hook is loaded; it sends a request only when invoked.
+
+Normal `??` requests show the command and ask `[y/N]`. To deliberately skip confirmation within the same vetted read-only policy:
+
+```bash
+?? --yes 'show python processes'
+```
+
+The runtime starts on demand, including when a service is unavailable or after reboot. Models are downloaded by installation, not silently by ordinary questions. If installation or the model download fails, it reports failure. Run the installer again to resume provisioning.
+
+## Installation options
+
+```bash
+bash install.sh --prefix "$HOME/tools" --no-service
+```
+
+`--no-shell` skips shell hooks. `--no-start` creates a source-only installation for CI/offline preparation; it skips runtime/model provisioning and service activation, so it does not claim the assistant is ready.
+
+The launcher lives at `<prefix>/bin/nano-shell` (`~/.local/bin/nano-shell` by default); hooks use its absolute path. Administrative commands `status`, `doctor`, `start`, `stop`, and `config --model NAME` are available, but routine terminal use requires none of them. The `setup` subcommand remains as an installer compatibility entrypoint; it never opens a browser.
+
+The dedicated headless endpoint is `127.0.0.1:11435`, separate from an existing system Ollama service. Set `NANO_SHELL_OLLAMA_PORT` consistently during installation and use to change it. `NANO_SHELL_OLLAMA_BIN` can select an existing executable. Nano Shell starts the dedicated process with cloud features disabled and keeps its models in its private XDG state directory.
 
 ## Command policy and privacy
 
-Commands run as your own user, through argument arrays and explicit pipelines. Shell evaluation is disabled. The validator rejects redirects, substitutions, command chains, interpreters, unknown executables, and unsupported options. It checks options as well as program names, including write-capable `find` actions and Git subcommands. This deliberately limits what the assistant can execute.
+Commands run as your own user through validated argument arrays and explicit pipelines. The policy rejects unknown programs, unsupported options, command substitutions, redirects, interpreters and write operations. Docker support is limited to `info`, `version` and `ps`. It cannot run `docker run`, `exec`, `stop`, or Compose mutations. Suggestions are rendered with quoted arguments and trusted absolute executable paths before insertion into a shell.
 
-This is a command policy, not an operating-system sandbox. Approved commands can display your files, process details, and filenames. Avoid asking for sensitive data in a shared terminal. The bridge listens only on `127.0.0.1`, requires a private local token, validates HTTP Host/Origin, and exposes inference rather than execution. It cannot protect against other programs running as your own OS user.
+This policy is not an OS sandbox. Approved reads can show file contents and process details. Model correctness is not guaranteed; inspect the suggested command. Actual command failures remain failures. A model output outside the supported subset is refused.
 
-The model receives your question, current directory, and bounded directory context. Shell history is not shared by default. Nano inference runs locally after Chrome's model download; Ollama requests stay on its configured loopback endpoint. No telemetry is included.
-
-Use `?? --history 'explain what I was doing'` to explicitly share the last 4096 characters from `HISTFILE` (or `~/.bash_history`). This reads saved history; it may not include commands from the current session that your shell has not flushed.
+The model receives your question, current directory and bounded directory names. History is opt-in through `?? --history 'question'`, sharing at most the last 4096 saved characters from `HISTFILE` or `~/.bash_history`. Local requests bypass proxies and refuse redirects. There is no telemetry. Ollama cloud features are disabled for the managed server.
 
 ## Remove
 
@@ -108,21 +85,18 @@ Use `?? --history 'explain what I was doing'` to explicitly share the last 4096 
 ~/.local/bin/nano-shell uninstall
 ```
 
-Stops the bridge, removes its service, launcher, installed source, and managed shell blocks. Opens no browser and preserves unrelated shell configuration. Add `--purge` to also remove Nano Shell configuration and state. Open a new terminal afterward to unload functions and key bindings.
+Uninstall stops only verified owned processes, removes its service/files/hooks and preserves models/configuration by default. Add `--purge` to remove Nano Shell's model storage and configuration too. Removing an old installation preserves the current installation's hooks and service. Open a new terminal afterward to unload its aliases and bindings.
 
-## Develop
+## Develop and publish
 
 ```bash
 python3 -m unittest discover -s tests -v
 python3 -m compileall -q nano_shell
-bash -n install.sh uninstall.sh shell/bash.sh
-node --check web/worker.js
+bash -n install.sh uninstall.sh shell/bash.sh scripts/publish.sh
 ```
 
-Tests exercise the command policy, bridge authorization/timeouts, and installer lifecycle. Test inference fixtures are explicitly local fakes; they do not establish Gemini Nano or Ollama model availability. Live model verification depends on a downloaded compatible model and is reported separately.
+See [verification details](docs/verification.md). Fixtures are explicitly mocks; they do not prove a downloaded model ran. Legacy bridge/browser files remain for earlier protocol regression tests, and are not part of the active headless runtime.
 
-See [verification and remaining limitations](docs/verification.md) for the exact checks reached in the initial build.
+To publish as the repository owner, authenticate GitHub CLI with `gh auth login -h github.com`, then run `bash scripts/publish.sh`. It checks account `fiazul`, pushes `main`, and verifies the remote commit and public visibility. The hosted install URL is pending until publication succeeds.
 
-MIT licensed. Contributions welcome.
-
-To publish the prepared repository as its owner, authenticate GitHub CLI with `gh auth login -h github.com`, then run `bash scripts/publish.sh`. The script checks account `fiazul`, pushes `main`, and verifies the remote commit and public visibility.
+MIT licensed.
