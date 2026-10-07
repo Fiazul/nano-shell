@@ -335,7 +335,7 @@ def provision(model):
     if verified_record is None:
         raise RuntimeError('runtime exited before model verification')
     generated = policy.parse_generation(backends.ollama_generate(prompt, model))
-    if generated['command'] != 'pwd':
+    if generated.get('command') != 'pwd':
         raise RuntimeError('model installation check did not return pwd; inference is unverified')
     with _lock():
         record = _owned_record()

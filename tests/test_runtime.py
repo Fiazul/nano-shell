@@ -231,11 +231,12 @@ class RuntimeTests(unittest.TestCase):
 
     def test_provision_rejects_unsafe_or_non_pwd_smoke(self):
         self.start_service()
-        for command in ['rm .', 'ls']:
+        for command in ['rm .', 'ls', None]:
             def api(url, payload=None, timeout=35, headers=None):
                 if url.endswith('/api/tags'):
                     return {'models': [{'name': 'qwen2.5-coder:1.5b'}]}
-                return {'done': True, 'response': json.dumps({'command': command})}
+                response = {'command': command} if command is not None else {'answer': 'This is an answer, not the requested smoke check.'}
+                return {'done': True, 'response': json.dumps(response)}
             with self.subTest(command=command), patch.object(backends, 'local_request', side_effect=api), self.assertRaises((runtime.RuntimeError, cli.policy.PolicyError)):
                 runtime.provision('qwen2.5-coder:1.5b')
         self.assertNotIn('verified_model', runtime._owned_record())

@@ -1,6 +1,6 @@
 {
   "name": "@fiazul/nano-shell",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Headless local AI assistant for your Linux terminal. Install once with npx, then ask with ??.",
   "license": "MIT",
   "author": {

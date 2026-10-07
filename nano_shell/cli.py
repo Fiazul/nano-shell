@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import time
 
-from . import backends, policy, storage, runtime
+from . import backends, policy, storage, runtime, search
 
 
 class CliError(RuntimeError):
@@ -62,6 +62,51 @@ def generate(question, history=False):
     runtime.require_model(config['model'])
     raw = backends.ollama_generate(backends.prompt_for(context), config['model'])
     return policy.parse_generation(raw)
+
+
+def summarize(context):
+    config = storage.load_config()
+    runtime.ensure_running()
+    runtime.require_model(config['model'])
+    raw = backends.ollama_generate(backends.grounded_prompt(context), config['model'], schema=backends.ANSWER_SCHEMA)
+    response = policy.parse_generation(raw)
+    if set(response) != {'answer'}:
+        raise policy.PolicyError('The model returned a command instead of a grounded answer; no command was executed.')
+    return response
+
+
+def lookup(question, term):
+    pipeline = search.command(term)
+    print(f'Running this command "{policy.render_command(pipeline)}"', file=sys.stderr, flush=True)
+    result = search.run(term)
+    cwd = json.dumps(result['cwd'], ensure_ascii=True)
+    label = json.dumps(term, ensure_ascii=True)
+    if result['status'] == 'no_matches':
+        print(f'No matches found in {cwd} for {label} (case-insensitive local-file search).')
+        return 0
+    if result['matches']:
+        print(f'Local matches in {cwd} for {label}:')
+        for record in result['matches']:
+            print(json.dumps(record, ensure_ascii=True), flush=True)
+    if result['status'] == 'timeout':
+        print('Local search timed out; any evidence is partial.', file=sys.stderr)
+    elif result['status'] == 'limited':
+        print('Local search reached its output limit; evidence is partial.', file=sys.stderr)
+    elif result['status'] == 'error':
+        print('Local search failed; any evidence is partial.', file=sys.stderr)
+    if result.get('discarded_bytes'):
+        print('An incomplete evidence record was discarded; it cannot support a citation.', file=sys.stderr)
+    if result['errors']:
+        print(search.safe_text(result['errors']), file=sys.stderr)
+    if not result['matches']:
+        return result['exit_code'] or 1
+    context = {key: result[key] for key in ('cwd', 'term', 'matches', 'status', 'partial')}
+    context['question'] = question
+    response = policy.parse_generation(json.dumps(summarize(context), ensure_ascii=False))
+    if set(response) != {'answer'}:
+        raise policy.PolicyError('The model returned a command instead of a grounded answer; no command was executed.')
+    print(response['answer'])
+    return result['exit_code']
 
 
 def start(foreground=False):
@@ -131,7 +176,7 @@ def parser():
         command.add_argument('question', nargs='+')
         command.add_argument('--history', action='store_true', help='explicitly share up to 4096 characters from HISTFILE or ~/.bash_history')
         if name == 'ask':
-            command.add_argument('--yes', action='store_true', help='execute only validated read-only commands without prompting')
+            command.add_argument('--yes', action='store_true', help='compatibility flag; validated read-only commands already run without prompting')
     daemon = commands.add_parser('start')
     daemon.add_argument('--foreground', action='store_true')
     for name in ('stop', 'status', 'doctor', 'setup'):
@@ -147,21 +192,24 @@ def main(argv=None):
         args = parser().parse_args(argv)
         if args.action in {'ask', 'suggest'}:
             question = ' '.join(args.question)
+            term = search.identity_term(question)
+            if term is not None:
+                if args.action == 'suggest':
+                    print(policy.render_command(search.command(term)))
+                    return 0
+                return lookup(question, term)
             response = generate(question, history=args.history) if args.history else generate(question)
             # Even custom/future adapters cannot bypass the execution policy.
-            response = policy.parse_generation(json.dumps(response))
+            response = policy.parse_generation(json.dumps(response, ensure_ascii=False))
+            if 'answer' in response:
+                if args.action == 'suggest':
+                    raise CliError('The model answered with text; no command is available to insert. Use ask to read the answer.')
+                print(response['answer'])
+                return 0
             pipeline = policy.validate_command(response['command'])
             if args.action == 'suggest':
                 print(policy.render_command(pipeline))
                 return 0
-            if not args.yes:
-                if not sys.stdin.isatty():
-                    raise CliError('execution requires an interactive confirmation or explicit --yes')
-                print(f'Run "{response["command"]}"? [y/N] ', end='', file=sys.stderr, flush=True)
-                answer = sys.stdin.readline().strip().lower()
-                if answer not in {'y', 'yes'}:
-                    print('Cancelled; command was not executed.', file=sys.stderr)
-                    return 1
             print(f'Running this command "{response["command"]}"', file=sys.stderr)
             return policy.execute(pipeline)
         if args.action == 'start':

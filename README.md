@@ -9,13 +9,20 @@ A headless local AI assistant in your existing Linux terminal. Install once, ope
 ?? find the largest file here
 ?? show python processes
 ?? what files changed in this git repo?
+?? who is Tuhin
 ```
 
-Nano Shell shows the generated read-only command and asks before running it. It starts its local model server automatically when needed. There is no browser window, account, cloud API key, or per-terminal setup command.
+Nano Shell shows `Running this command "…"` and runs validated read-only commands automatically. It starts its local model server automatically when needed. There is no browser window, account, cloud API key, or per-terminal setup command.
 
 ## Install
 
-From any directory on this machine, including `~`, install the current local checkout through npx:
+Install directly from the [public GitHub repository](https://github.com/Fiazul/nano-shell), from any directory:
+
+```bash
+npx --yes github:Fiazul/nano-shell install
+```
+
+To use the existing local checkout on this machine:
 
 ```bash
 npx --yes "$HOME/Desktop/cli-assistant/nano-shell" install
@@ -39,7 +46,7 @@ Custom install through the npm package:
 npx --yes @fiazul/nano-shell install --model qwen2.5-coder:3b --prefix "$HOME/tools"
 ```
 
-Until publication, substitute the absolute local checkout path for `@fiazul/nano-shell` in npx commands. Developers can also run `bash install.sh` inside a checkout.
+Until npm publication, substitute `github:Fiazul/nano-shell` or the absolute local checkout path for `@fiazul/nano-shell` in npx commands. Developers can also run `bash install.sh` inside a checkout.
 
 Requirements: Linux x86_64 or ARM64, Node.js 18+ with npm/npx, Python 3.10+, Bash, enough disk/RAM for the model, and internet for initial downloads. The runtime installer uses curl and zstd, or the system libzstd when the zstd executable is absent. No sudo is used. Automatic downloads use [Ollama's official Linux distribution](https://docs.ollama.com/linux).
 
@@ -61,11 +68,15 @@ Use a space after `??`, and quote questions containing shell punctuation:
 
 Type a question at the prompt and press **Ctrl+G** to insert a shell-safe command suggestion. Review it and press Enter yourself. The shortcut replaces that key's existing binding while its hook is loaded; it sends a request only when invoked.
 
-Normal `??` requests show the command and ask `[y/N]`. To deliberately skip confirmation within the same vetted read-only policy:
+Normal `??` requests run only commands accepted by the read-only policy, without a confirmation prompt. `--yes` remains accepted for older scripts:
 
 ```bash
 ?? --yes 'show python processes'
 ```
+
+Questions such as `?? who is Tuhin`, `?? "who's Tuhin?"`, and `?? what do you know about Tuhin` search text files under the current directory with case-insensitive, literal matching. Nano shows file-and-line evidence, then asks the local model to explain those matches. It reports when nothing matches; it does not infer that a person does not exist. Change directory to choose the search scope.
+
+Searches skip binary files, discovered symlinks, `.git`, `node_modules`, `.cache`, and `.venv`. Each search stops after five seconds or 16 KiB of captured output. A partial search, timeout, read error, or failed explanation remains visibly incomplete. Other general questions can return plain-text answers; the model cannot execute those answers.
 
 The runtime starts on demand, including when a service is unavailable or after reboot. Models are downloaded by installation, not silently by ordinary questions. If installation or the model download fails, it reports failure. Run the installer again to resume provisioning.
 
@@ -83,11 +94,11 @@ The dedicated headless endpoint is `127.0.0.1:11435`, separate from an existing 
 
 ## Command policy and privacy
 
-Commands run as your own user through validated argument arrays and explicit pipelines. The policy rejects unknown programs, unsupported options, command substitutions, redirects, interpreters and write operations. Docker support is limited to `info`, `version` and `ps`. It cannot run `docker run`, `exec`, `stop`, or Compose mutations. Suggestions are rendered with quoted arguments and trusted absolute executable paths before insertion into a shell.
+Commands run automatically as your own user through validated argument arrays and explicit pipelines. The policy rejects unknown programs, unsupported options, command substitutions, redirects, interpreters and write operations. Docker support is limited to `info`, `version` and `ps`. It cannot run `docker run`, `exec`, `stop`, or Compose mutations. Suggestions are rendered with quoted arguments and trusted absolute executable paths before insertion into a shell.
 
 This policy is not an OS sandbox. Approved reads can show file contents and process details. Model correctness is not guaranteed; inspect the suggested command. Actual command failures remain failures. A model output outside the supported subset is refused.
 
-The model receives your question, current directory and bounded directory names. History is opt-in through `?? --history 'question'`, sharing at most the last 4096 saved characters from `HISTFILE` or `~/.bash_history`. Local requests bypass proxies and refuse redirects. There is no telemetry. Ollama cloud features are disabled for the managed server.
+The model receives your question, current directory and bounded directory names. For local identity searches, it also receives matching file contents and source locations, within the search limits above. History is opt-in through `?? --history 'question'`, sharing at most the last 4096 saved characters from `HISTFILE` or `~/.bash_history`. Local requests bypass proxies and refuse redirects. There is no telemetry. Ollama cloud features are disabled for the managed server.
 
 ## Remove
 
@@ -109,6 +120,6 @@ bash -n install.sh uninstall.sh shell/bash.sh scripts/publish.sh
 
 See [verification details](docs/verification.md). Fixtures are explicitly mocks; they do not prove a downloaded model ran. Legacy bridge/browser files remain for earlier protocol regression tests, and are not part of the active headless runtime.
 
-To publish as the repository owner, authenticate GitHub CLI with `gh auth login -h github.com`, then run `bash scripts/publish.sh`. It checks account `fiazul`, pushes `main`, and verifies the remote commit and public visibility. The hosted install URL is pending until publication succeeds. npm publishing is separate: after `npm login` as the scope owner, run `bash scripts/publish-npm.sh`; it publishes the packed artifact and checks the registry version and SHA-512 integrity. Public npm installation remains pending until that readback succeeds.
+To publish as the repository owner, authenticate GitHub CLI with `gh auth login -h github.com`, then run `bash scripts/publish.sh`. It checks account `fiazul`, pushes `main`, and verifies the remote commit and public visibility. The GitHub repository is public; Git-backed npx installation requires no npm registry release. npm publishing is separate: after `npm login` as the scope owner, run `bash scripts/publish-npm.sh`; it publishes the packed artifact and checks the registry version and SHA-512 integrity. Public npm installation remains pending until that readback succeeds.
 
 MIT licensed.

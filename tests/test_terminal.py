@@ -20,7 +20,7 @@ class TerminalTests(unittest.TestCase):
                               env=dict(os.environ, HOME=str(home), PYTHONPATH=str(ROOT)),
                               cwd=home, input=answer, capture_output=True, text=True, timeout=10)
 
-    def test_original_download_pipeline_runs_only_after_confirmation(self):
+    def test_original_download_pipeline_runs_without_confirmation(self):
         with tempfile.TemporaryDirectory(prefix="nano terminal ") as directory:
             home = Path(directory)
             downloads = home / "Downloads"
@@ -31,15 +31,13 @@ class TerminalTests(unittest.TestCase):
             os.utime(old, (1000000000, 1000000000))
             os.utime(new, (1700000000, 1700000000))
             command = "find ~/Downloads -type f -printf '%T@ %p\\n' | sort -nr | head -1"
-            no = self.run_fixture_question(home, command, "n\n")
-            self.assertNotEqual(no.returncode, 0)
-            self.assertEqual(no.stdout, "")
-            self.assertIn("not executed", no.stderr)
-            yes = self.run_fixture_question(home, command, "y\n")
-            self.assertEqual(yes.returncode, 0, yes.stderr)
-            self.assertIn(str(new), yes.stdout)
-            self.assertNotIn(str(old), yes.stdout)
-            self.assertIn("[y/N]", yes.stderr)
+            result = self.run_fixture_question(home, command, "n\n")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(str(new), result.stdout)
+            self.assertNotIn(str(old), result.stdout)
+            self.assertNotIn("[y/N]", result.stderr)
+            self.assertIn('Running this command "', result.stderr)
+
 
 
 if __name__ == "__main__":

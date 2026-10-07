@@ -22,19 +22,20 @@ FLAGS = {
     'wc': {'--lines', '--words', '--bytes', '--chars'},
     'head': set(), 'tail': set(),
     'sort': {'--reverse', '--numeric-sort', '--human-numeric-sort', '--unique', '--ignore-case'},
-    'grep': {'--ignore-case', '--line-number', '--invert-match', '--count', '--files-with-matches', '--fixed-strings', '--extended-regexp', '--recursive', '--no-messages'},
+    'grep': {'--ignore-case', '--line-number', '--invert-match', '--count', '--files-with-matches', '--fixed-strings', '--extended-regexp', '--recursive', '--no-messages', '--null'},
     'ps': {'--everyone', '--no-headers'},
     'ss': {'--all', '--listening', '--numeric', '--tcp', '--udp', '--processes', '--summary'},
 }
 SHORT = {
     'ls': 'alhstrRdSF1', 'du': 'shack', 'df': 'hTk', 'cat': 'nbET', 'wc': 'lwcmL',
-    'head': '', 'tail': '', 'sort': 'rnhuf', 'grep': 'invcFlErsHh', 'ps': 'efaux', 'ss': 'alntupsr', 'pwd': 'LP',
+    'head': '', 'tail': '', 'sort': 'rnhuf', 'grep': 'invcFlErsHhIZ', 'ps': 'efaux', 'ss': 'alntupsr', 'pwd': 'LP',
 }
 VALUE_OPTIONS = {
     'head': {'-n': r'\d{1,6}', '--lines': r'\d{1,6}'},
     'tail': {'-n': r'\d{1,6}', '--lines': r'\d{1,6}'},
     'sort': {'-k': r'\d{1,3}(?:,\d{1,3})?', '--key': r'\d{1,3}(?:,\d{1,3})?'},
     'du': {'--max-depth': r'\d{1,3}'},
+    'grep': {'--exclude-dir': r'(?:\.git|node_modules|\.cache|\.venv)'},
 }
 
 
@@ -72,8 +73,9 @@ def _find(args):
 
 def _validate_argv(argv):
     program, args = argv[0], argv[1:]
+    literal_start = args.index('--') + 1 if program == 'grep' and '--' in args else len(args)
     for index, arg in enumerate(args):
-        if '\\' in arg and not (program == 'find' and index > 0 and args[index - 1] == '-printf'):
+        if '\\' in arg and index < literal_start and not (program == 'find' and index > 0 and args[index - 1] == '-printf'):
             raise PolicyError('backslash escapes are unsupported outside find print formats')
     if program == 'find':
         _find(args)
@@ -153,20 +155,37 @@ def validate_command(command):
     return pipeline + [argv]
 
 
+def _response_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('duplicate response field')
+        result[key] = value
+    return result
+
+
 def parse_generation(raw):
     if not isinstance(raw, str) or len(raw) > 8192:
-        raise PolicyError('model response is oversized or not text')
+        raise PolicyError('The model response is too long or is not text. Please try a shorter question.')
     try:
-        result = json.loads(raw)
+        result = json.loads(raw, object_pairs_hook=_response_object)
     except (ValueError, RecursionError) as exc:
-        raise PolicyError('model must return one JSON object') from exc
-    if not isinstance(result, dict) or set(result) - {'command', 'explanation'}:
-        raise PolicyError('unexpected model response fields')
+        raise PolicyError('The model returned an invalid response. Please try again; expected one JSON answer or command.') from exc
+    if not isinstance(result, dict):
+        raise PolicyError('The model returned an invalid response. Please try again; expected an answer or command.')
+    if set(result) == {'answer'}:
+        answer = result['answer']
+        if not isinstance(answer, str) or not answer.strip() or len(answer) > 4096 or any(not char.isprintable() for char in answer):
+            raise PolicyError('The model answer must be nonempty printable text of at most 4096 characters. Please try again.')
+        return result
+    if 'command' not in result or set(result) - {'command', 'explanation'}:
+        raise PolicyError('The model returned an invalid response. Please try again; expected either an answer or a command, without extra fields.')
     if not isinstance(result.get('explanation', ''), str) or len(result.get('explanation', '')) > 2048:
-        raise PolicyError('invalid explanation')
+        raise PolicyError('The model command explanation is invalid. Please try again.')
     if any(not char.isprintable() for char in result.get('explanation', '')):
-        raise PolicyError('explanation must contain only printable text')
-    validate_command(result.get('command'))
+        raise PolicyError('The model command explanation must contain only printable text. Please try again.')
+    # Structured output never replaces the independent execution policy.
+    validate_command(result['command'])
     return result
 
 
@@ -182,7 +201,9 @@ def trusted_pipeline(pipeline):
         executable = shutil.which(argv[0], path='/usr/bin:/bin')
         if not executable:
             raise PolicyError('program is not installed: ' + argv[0])
-        operands = [os.path.expanduser(arg) if arg == '~' or arg.startswith('~/') else arg for arg in argv[1:]]
+        literal_pattern = argv.index('--') + 1 if argv[0] == 'grep' and '--' in argv else -1
+        operands = [os.path.expanduser(arg) if index != literal_pattern and (arg == '~' or arg.startswith('~/')) else arg
+                    for index, arg in enumerate(argv[1:], start=1)]
         actual = [executable] + operands
         if argv[0] == 'git':
             actual = [executable, '-c', 'core.fsmonitor=false', '--no-optional-locks'] + operands

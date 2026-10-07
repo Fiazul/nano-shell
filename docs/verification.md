@@ -1,4 +1,16 @@
-# npx distribution verification on 2026-10-07
+# Automatic execution and local search verification on 2026-10-07
+
+Reached: implemented, unit-tested, and live GitHub publication/readback verified for the archive compatibility fix. The public repository is [Fiazul/nano-shell](https://github.com/Fiazul/nano-shell). [Hosted CI for commit 598bb2a](https://github.com/Fiazul/nano-shell/actions/runs/37583584655) passed on Python 3.10, 3.12, and 3.14, including compilation, syntax and npm packaging checks.
+
+- The Python 3.14 failure was confirmed from authenticated job logs: the late-symlink regression expected `BootstrapError`, but newer tar filtering normalized the link. Validation now rejects ambiguous parent traversal before extraction; legitimate leading parent references remain supported. All seven archive tests also pass on the locally available Python 3.14 build.
+- The subsequent automatic-execution/search changes pass 109 local tests: 103 passed and six legacy socket tests explicitly skipped because the sandbox denies sockets. Validated read-only requests run without confirmation; mutating/unsupported requests remain refused and suggestions never execute.
+- Real temporary-file/process tests cover case-insensitive literal search, binary and symlink exclusions, timeout/process-group cleanup, bounded combined output, no matches, read failures, partial results, malicious filenames and discarded incomplete records. Filename/line/content evidence uses structured JSON records, preserving source identity without terminal-control output.
+- Explanation tests use mocked inference, require an answer-only response, supply structured matches as untrusted data and preserve visible evidence when inference fails. They verify control flow and validation, not a real model's factual accuracy.
+- General answer tests cover strict field alternatives, duplicate keys, control characters, long Unicode answers and independent command validation. A provisioning answer cannot mark a model verified.
+
+Unverified: real downloaded-model inference, installed host upgrade, Docker daemon queries, full systemd login/reboot lifecycle, Zsh and ARM64. The local standalone Python 3.14 build lacks the pidfd APIs required by lifecycle tests; its full suite failed for that environment limitation. Hosted Python 3.14 lifecycle tests passed. Public npm registry publication is still pending; Git-backed npx installation is available. The earlier sections below are historical verification records.
+
+# Earlier npx distribution verification on 2026-10-07
 
 Reached: implemented, unit-tested, and actual local npm packaging/npx source-only install/uninstall tested. Public npm installation is not yet available; npm whoami reports ENEEDAUTH. The local Git repository has no remote configured and GitHub CLI authentication remains invalid.
 

@@ -177,13 +177,13 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), context);
         result = subprocess.run(['node', '-e', script, str(worker)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_untrusted_suggestion_and_noninteractive_ask_never_execute(self):
-        for response in [{'command': 'rm .'}, {'command': 'pwd'}]:
+    def test_noninteractive_read_only_ask_runs_but_unsafe_ask_is_refused(self):
+        for response, code, called in [({'command': 'rm .'}, 1, False), ({'command': 'pwd'}, 0, True)]:
             with patch.object(cli, 'generate', return_value=response), \
-                 patch.object(policy, 'execute') as execute, patch.object(sys.stdin, 'isatty', return_value=False), \
+                 patch.object(policy, 'execute', return_value=0) as execute, patch.object(sys.stdin, 'isatty', return_value=False), \
                  contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
-                self.assertNotEqual(cli.main(['ask', 'question']), 0)
-                execute.assert_not_called()
+                self.assertEqual(cli.main(['ask', 'question']), code)
+                self.assertEqual(execute.called, called)
 
     def test_yes_is_still_vetted_and_exit_code_preserved(self):
         with patch.object(cli, 'generate', return_value={'command': 'pwd'}), \
