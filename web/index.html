@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nano Shell · local worker</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/worker.js" defer></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">NANO SHELL</p>
+    <h1>Your terminal’s local model.</h1>
+    <p>Keep this Chrome window open while using Gemini Nano in your terminal.</p>
+    <button id="initialize" type="button" disabled>Initialize Gemini Nano</button>
+    <p id="status" role="status" aria-live="polite">Checking availability…</p>
+    <progress id="download" max="1" value="0" hidden></progress>
+    <p class="note">Initialization may download the model. Terminal commands are previewed and validated separately; this window only supplies inference.</p>
+  </main>
+</body>
+</html>
