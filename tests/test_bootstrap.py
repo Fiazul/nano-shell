@@ -133,11 +133,16 @@ class BootstrapTests(unittest.TestCase):
                 link.type = tarfile.SYMTYPE
                 link.linkname = 'libfoo.so.1'
                 handle.addfile(link)
+                parent_link = tarfile.TarInfo('lib/ollama/libbar.so')
+                parent_link.type = tarfile.SYMTYPE
+                parent_link.linkname = '../../bin/ollama'
+                handle.addfile(parent_link)
             target = Path(directory) / 'target'
             target.mkdir()
             bootstrap.extract_archive(archive, target)
             self.assertEqual((target / 'bin/ollama').read_bytes(), b'test')
             self.assertTrue((target / 'lib/ollama/libfoo.so').is_symlink())
+            self.assertEqual((target / 'lib/ollama/libbar.so').read_bytes(), b'test')
 
     def test_archive_escape_and_special_files_rejected(self):
         self.assertIsNotNone(bootstrap)

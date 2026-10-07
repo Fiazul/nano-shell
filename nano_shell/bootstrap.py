@@ -71,6 +71,14 @@ def extract_archive(archive, target):
             if not (member.isfile() or member.isdir() or member.issym() or member.islnk()):
                 raise BootstrapError('Special files are forbidden in runtime archive')
             if member.issym() or member.islnk():
+                # Parent steps after named segments change meaning when tar filters normalize links.
+                seen_child = False
+                for part in Path(member.linkname).parts:
+                    if part == '..':
+                        if seen_child:
+                            raise BootstrapError('Runtime archive link has ambiguous parent traversal')
+                    else:
+                        seen_child = True
                 link = (root / member.name).parent / member.linkname if member.issym() else root / member.linkname
                 if Path(member.linkname).is_absolute() or not link.resolve().is_relative_to(root):
                     raise BootstrapError('Runtime archive link escapes install directory')
